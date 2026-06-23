@@ -1,0 +1,31 @@
+{
+  "name": "bankroll-mafia",
+  "private": true,
+  "scripts": {
+    "build": "turbo run build",
+    "db:generate": "pnpm --filter @bankroll/db db:generate",
+    "db:migrate": "pnpm --filter @bankroll/db db:migrate",
+    "db:up": "docker compose up -d postgres",
+    "dev": "turbo run dev",
+    "lint": "turbo run lint",
+    "format": "prettier --write \"**/*.{ts,tsx,md}\"",
+    "check-types": "turbo run check-types",
+    "commitlint": "commitlint --edit",
+    "commitlint:last": "commitlint --last --verbose",
+    "prepare": "node .husky/install.mjs",
+    "test": "turbo run test"
+  },
+  "devDependencies": {
+    "@commitlint/cli": "^21.1.0",
+    "@commitlint/config-conventional": "^21.1.0",
+    "husky": "^9.1.7",
+    "prettier": "^3.7.4",
+    "turbo": "^2.9.18",
+    "typescript": "5.9.2",
+    "vitest": "^4.1.9"
+  },
+  "packageManager": "pnpm@9.0.0",
+  "engines": {
+    "node": ">=18"
+  }
+}

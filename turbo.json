@@ -1,0 +1,40 @@
+{
+  "$schema": "https://turborepo.dev/schema.json",
+  "ui": "tui",
+  "globalEnv": [
+    "COOKIE_SECRET",
+    "BOSS_VAULT_ADDRESS",
+    "CREW_VAULT_ADDRESS",
+    "DATABASE_URL",
+    "HOST",
+    "HIGHROLLER_VAULT_ADDRESS",
+    "LOG_LEVEL",
+    "NEXT_PUBLIC_SOLANA_RPC_URL",
+    "NODE_ENV",
+    "PAYOUT_AUTHORITY_KEYPAIR_PATH",
+    "PORT",
+    "SOLANA_RPC_URL",
+    "STREET_VAULT_ADDRESS",
+    "WEB_ORIGINS"
+  ],
+  "tasks": {
+    "build": {
+      "dependsOn": ["^build"],
+      "inputs": ["$TURBO_DEFAULT$", ".env*"],
+      "outputs": [".next/**", "!.next/cache/**", "!.next/dev/**"]
+    },
+    "lint": {
+      "dependsOn": ["^lint"]
+    },
+    "check-types": {
+      "dependsOn": ["^check-types"]
+    },
+    "test": {
+      "dependsOn": ["^test"]
+    },
+    "dev": {
+      "cache": false,
+      "persistent": true
+    }
+  }
+}

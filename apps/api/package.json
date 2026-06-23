@@ -1,0 +1,39 @@
+{
+  "name": "api",
+  "version": "0.1.0",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "dev": "tsx watch src/server.ts",
+    "build": "tsc --noEmit",
+    "start": "tsx src/server.ts",
+    "lint": "eslint . --max-warnings 0",
+    "check-types": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@bankroll/db": "workspace:^",
+    "@bankroll/economy": "workspace:*",
+    "@bankroll/game-config": "workspace:*",
+    "@bankroll/shared-types": "workspace:*",
+    "@fastify/cookie": "^11.0.2",
+    "@fastify/cors": "^11.2.0",
+    "@fastify/helmet": "^13.0.2",
+    "@solana/web3.js": "^1.98.4",
+    "bs58": "^6.0.0",
+    "drizzle-orm": "^0.45.2",
+    "fastify": "^5.8.5",
+    "pino": "^10.3.1",
+    "tweetnacl": "^1.0.3",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@repo/eslint-config": "workspace:*",
+    "@repo/typescript-config": "workspace:*",
+    "@types/node": "^22.15.3",
+    "eslint": "^9.39.1",
+    "tsx": "^4.22.4",
+    "typescript": "5.9.2",
+    "vitest": "4.1.9"
+  }
+}

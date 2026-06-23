@@ -1,0 +1,20 @@
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: bankroll
+      POSTGRES_PASSWORD: bankroll
+      POSTGRES_DB: bankroll_mafia
+    ports:
+      - "5432:5432"
+    volumes:
+      - bankroll_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U bankroll -d bankroll_mafia"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  bankroll_postgres_data:
+
