@@ -24,6 +24,7 @@ export const targetDisplay = {
     id: "corner-bank",
     label: "Corner Bank",
     icon: Crosshair,
+    imageSrc: "/images/heist/targets/private-bank.png",
     description:
       "Low bankroll target with stable volume and capped jackpot exposure. Best for testing repeatable heist flow.",
   },
@@ -31,6 +32,7 @@ export const targetDisplay = {
     id: "credit-union",
     label: "Credit Union",
     icon: Shield,
+    imageSrc: "/images/heist/targets/private-bank.png",
     description:
       "Lower drama, lower upside target for safer-feeling runs once target profiles are wired.",
   },
@@ -38,10 +40,22 @@ export const targetDisplay = {
     id: "private-vault",
     label: "Private Vault",
     icon: Vault,
+    imageSrc: "/images/heist/targets/private-bank.png",
     description:
       "Higher-volatility target placeholder for larger bankroll tiers and stricter caps.",
   },
 } as const;
+
+export const crewImageById = {
+  driver: "/images/heist/crew/driver.png",
+  hacker: "/images/heist/crew/hacker.png",
+  insider: "/images/heist/crew/insider.png",
+  cleaner: "/images/heist/crew/cleaner.png",
+  enforcer: "/images/heist/crew/enforcer.png",
+  lockpick: "/images/heist/crew/lockpick.png",
+  lookout: "/images/heist/crew/lookout.png",
+  lawyer: "/images/heist/crew/lawyer.png",
+} satisfies Record<CrewId, string>;
 
 export const crewIcons = {
   driver: Car,

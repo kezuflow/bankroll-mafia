@@ -1,5 +1,6 @@
 import { crewConfigs } from "@bankroll/game-config";
 import type { CrewId } from "@bankroll/shared-types";
+import Image from "next/image";
 
 import { Badge } from "@/components/ui/badge";
 import {
@@ -10,7 +11,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 
-import { crewIcons } from "./display-config";
+import { crewIcons, crewImageById } from "./display-config";
 
 export function CrewCard({
   selectedCrewIds,
@@ -37,14 +38,25 @@ export function CrewCard({
               <button
                 type="button"
                 key={crew.id}
-                className="flex min-h-24 gap-3 rounded-lg border border-border bg-secondary/40 p-3 text-left transition hover:border-primary disabled:cursor-not-allowed disabled:opacity-60"
+                className="grid min-h-36 grid-cols-[80px_1fr] gap-3 rounded-lg border border-border bg-secondary/40 p-3 text-left transition hover:border-primary disabled:cursor-not-allowed disabled:opacity-60"
                 onClick={() => {
                   onCrewToggle(crew.id);
                 }}
                 disabled={!selected && selectedCrewIds.length >= 4}
               >
-                <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-background text-primary">
-                  <Icon className="h-5 w-5" aria-hidden="true" />
+                <div className="relative h-28 overflow-hidden rounded-md border border-border bg-background">
+                  <Image
+                    src={crewImageById[crew.id]}
+                    alt={`${crew.label} crew portrait`}
+                    fill
+                    loading="eager"
+                    unoptimized
+                    sizes="80px"
+                    className="object-cover"
+                  />
+                  <div className="absolute bottom-1 left-1 flex h-7 w-7 items-center justify-center rounded-sm bg-background/90 text-primary shadow-sm backdrop-blur">
+                    <Icon className="h-4 w-4" aria-hidden="true" />
+                  </div>
                 </div>
                 <div className="min-w-0">
                   <div className="mb-1 flex items-center gap-2">
