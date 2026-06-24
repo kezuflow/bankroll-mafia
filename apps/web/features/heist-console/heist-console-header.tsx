@@ -4,6 +4,8 @@ import { Badge } from "@/components/ui/badge";
 import { WalletConnectButton } from "@/components/wallet-connect-button";
 
 export function HeistConsoleHeader() {
+  const cluster = process.env.NEXT_PUBLIC_SOLANA_CLUSTER ?? "devnet";
+
   return (
     <header className="flex flex-col gap-4 border-b border-border pb-5 lg:flex-row lg:items-center lg:justify-between">
       <div className="flex items-center gap-3">
@@ -18,7 +20,7 @@ export function HeistConsoleHeader() {
         </div>
       </div>
       <div className="flex flex-wrap items-center gap-2">
-        <Badge variant="outline">Devnet</Badge>
+        <Badge variant="outline">{cluster}</Badge>
         <Badge variant="secondary">Native SOL</Badge>
         <WalletConnectButton />
       </div>

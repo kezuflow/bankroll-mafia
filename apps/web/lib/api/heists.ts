@@ -19,6 +19,8 @@ export interface HeistIntentResponse {
     recipientAddress?: string;
     asset?: "SOL";
     amountBaseUnits?: string;
+    latestBlockhash?: string;
+    lastValidBlockHeight?: number;
   };
   reused: boolean;
   paymentSignature?: string;

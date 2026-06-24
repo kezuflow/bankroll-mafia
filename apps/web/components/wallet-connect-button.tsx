@@ -3,6 +3,7 @@
 import { useWallet } from "@solana/wallet-adapter-react";
 import { WalletMultiButton } from "@solana/wallet-adapter-react-ui";
 import bs58 from "bs58";
+import { useEffect, useState } from "react";
 import useSWR from "swr";
 
 import { Badge } from "@/components/ui/badge";
@@ -19,12 +20,28 @@ function shortAddress(address: string) {
 }
 
 export function WalletConnectButton() {
+  const [mounted, setMounted] = useState(false);
   const { publicKey, connected, signMessage } = useWallet();
   const { data, error, isLoading, mutate } = useSWR("/auth/me", getAuthMe, {
     shouldRetryOnError: false,
   });
   const authenticated =
     data?.authenticated && publicKey?.toBase58() === data.walletAddress;
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  if (!mounted) {
+    return (
+      <div className="flex flex-wrap items-center gap-2">
+        <Badge variant="outline">Wallet Offline</Badge>
+        <Button type="button" disabled>
+          Select Wallet
+        </Button>
+      </div>
+    );
+  }
 
   const handleSignIn = async () => {
     if (!publicKey || !signMessage) {
