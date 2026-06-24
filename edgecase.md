@@ -110,6 +110,7 @@ This file tracks edge cases discovered while implementing features from `PLAN.md
 - `NEXT_PUBLIC_API_URL` must match the API origin exactly in local and deployed environments, or browser cookie/CORS behavior will look like broken auth.
 - Preparing a heist intent is not the same as paying for a heist. Until native SOL transfer preparation exists, the frontend must show that payment preparation is unavailable.
 - Generating a new idempotency key per button press is acceptable for manual UI attempts, but retry flows should reuse the same key to avoid duplicate intent records.
+- Bodyless POST requests such as settlement triggers must not send `Content-Type: application/json`; Fastify can reject an empty JSON body before route logic returns the intended controlled error.
 
 ## Phase 10: Backend Heist API
 
