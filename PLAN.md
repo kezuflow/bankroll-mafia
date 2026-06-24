@@ -2,9 +2,9 @@
 
 ## Current Target
 
-Build Bankroll Mafia v1 as a Solana-first mafia/heist slot game with a trusted backend settlement model.
+Build Bankroll Mafia v1 as a Solana Devnet-first mafia/heist slot game with program-owned vault custody.
 
-Players connect a Solana wallet, choose a tier, choose a target, choose a crew, pay a heist cost with native SOL, and receive one of five outcomes. The frontend sells the mafia fantasy. The backend enforces casino-style RTP, vault caps, settlement rules, audit records, and payout preparation.
+Players connect a Solana wallet, choose a tier, choose a target, choose a crew, sign an onchain heist entry transaction with native SOL, and receive one of five outcomes. The frontend sells the mafia fantasy. The Solana program owns tier vaults and enforces custody-sensitive movement. The backend authenticates, indexes, prepares helper transactions, and exposes read APIs.
 
 Core rule:
 
@@ -17,24 +17,36 @@ Read these before implementing:
 - `AGENTS.md`
 - `docs/design/game-loop-mechanics.md`
 - `docs/design/system-architecture.md`
+- `docs/design/onchain-vault-program.md`
 
 ## Hard Decisions Already Made
 
 - Chain: Solana-first.
-- Development cluster: start localnet, then Solana Devnet.
+- Development cluster: Solana Devnet first.
 - Asset v1: native SOL.
 - Wallet: Solana Wallet Adapter.
 - Frontend: Next.js, Tailwind CSS, shadcn/ui, lucide-react, SWR, Zustand.
 - Backend: Fastify, PostgreSQL, Drizzle, Zod, Pino.
-- Onchain v1: direct native SOL transfers, not a custom Anchor program.
+- Onchain v1 target: one Solana program with four tier vault PDAs.
 - Payment model: no user predeposit ledger.
-- Custody model v1: the user signs each heist payment to a treasury/vault SOL address; payouts are sent back from treasury/vault hot wallets by the backend.
-- RNG for prototype/v1: trusted backend RNG.
-- Smart contracts later: optional Anchor program if traction proves the game loop and custody/settlement should move onchain.
-- RNG later: provably fair RNG, commit-reveal, or Solana-compatible VRF.
+- Custody model v1 target: user signs `enter_heist`; program moves SOL into the tier vault PDA and later pays from that PDA.
+- RNG for Devnet: unresolved; acceptable candidates are Solana-compatible VRF/oracle or commit-reveal with timeout/refund.
+- Backend hot-wallet payout model: deprecated for serious v1 custody; keep only as historical prototype code until replaced.
+- Anchor: used for the Solana program scaffold. Direct `cargo build-sbf` is the reliable native Windows build path right now; `anchor build` still has a Windows toolchain caveat documented in `docs/development/solana-toolchain.md`.
 - Package names: `@bankroll/*`.
 - No Redis for v1.
 - No PvP, dirty cash, energy, cooldowns, free claims, referrals, or hidden RNG nerfs for v1.
+
+## Current Implementation Status
+
+- Solana CLI, Rust, MSVC Build Tools, AVM, and Anchor CLI are installed locally.
+- Solana config targets Devnet.
+- Initial Anchor program scaffold exists under `programs/bankroll-mafia`.
+- Program id: `H8xb7nuoB6uv9V9Eye1c8CWFuefcdDXwLri4VTd1mSyj`.
+- Direct SBF build succeeds with `cargo build-sbf --manifest-path programs/bankroll-mafia/Cargo.toml`.
+- `anchor build` does not yet pass on native Windows because of an Anchor/AVM/cargo-build-sbf execution issue.
+- Implemented onchain instructions so far: `initialize_config`, `initialize_tier_vault`, and `enter_heist`.
+- Not implemented yet: onchain settlement, payout logic, RNG reveal, admin withdrawals, reserve accounting, and frontend/API onchain transaction integration.
 
 ## Stop Conditions
 
@@ -42,9 +54,10 @@ Stop and report instead of improvising if:
 
 - Node or pnpm tooling is missing and cannot be installed in the environment.
 - A dependency requires switching away from Solana Wallet Adapter.
-- Any implementation path would require custody claims that are stronger than the actual trusted-backend model.
+- Any implementation path would describe the system as fully trustless before RNG/admin controls are verifiable and audited.
+- Solana CLI or Rust/SBF tooling is required for program build/deploy work and is missing.
 - Economy math would make a repeatable heist reach or exceed 100% RTP.
-- A settlement path can double-pay, settle twice, or pay from the wrong vault.
+- A settlement path can double-pay, settle twice, pay from the wrong vault, or withdraw reserved vault funds.
 
 ## Phase 0: Repo Baseline
 
@@ -231,7 +244,98 @@ Stop and report instead of improvising if:
    - Prefer Docker Compose only if needed.
    - Acceptance: a new dev can start Postgres and run migrations.
 
-## Phase 7: Solana Payment Flow
+## Phase 7: Devnet Onchain Program Foundation
+
+1. Install and validate Solana program toolchain.
+   - Install Solana CLI.
+   - Install Anchor/AVM or choose native Solana Rust explicitly.
+   - Run `solana --version`.
+   - Run `anchor --version`.
+   - Run a direct SBF build.
+   - Acceptance: toolchain can build the program locally. Native Windows `anchor build` remains optional until the documented caveat is fixed.
+
+2. Scaffold the Bankroll Mafia program.
+   - Preferred location: `programs/bankroll-mafia`.
+   - Add program package/workspace files.
+   - Add Devnet deploy config.
+   - Acceptance: program builds locally and has a generated program id.
+
+3. Implement PDA accounts.
+   - Config PDA.
+   - Street vault PDA.
+   - Crew vault PDA.
+   - Boss vault PDA.
+   - Highroller vault PDA.
+   - Heist PDA per wager.
+   - Acceptance: tests derive the same PDAs as `@bankroll/solana`.
+
+4. Implement `initialize_config`.
+   - Store admin authority.
+   - Store resolver/RNG authority.
+   - Store paused flag.
+   - Store economy config version or config hash.
+   - Acceptance: config cannot be reinitialized by another authority.
+
+5. Implement `initialize_tier_vault`.
+   - Initialize tier vault metadata for each tier.
+   - Bind each vault to exactly one tier.
+   - Store bump and accounting metadata.
+   - Acceptance: wrong tier seeds fail.
+
+6. Implement `enter_heist`.
+   - Player signs the transaction.
+   - Validate tier, cost bounds, four crew IDs, and duplicate crew IDs.
+   - Transfer native SOL from player to the tier vault PDA.
+   - Create the heist PDA from player and idempotency key hash.
+   - Store pending heist state.
+   - Acceptance: duplicate idempotency key cannot create a second heist.
+
+7. Implement first settlement path.
+   - Use the chosen Devnet RNG path.
+   - Verify heist is pending.
+   - Calculate payout.
+   - Pay from the same tier vault PDA.
+   - Mark heist settled.
+   - Acceptance: settlement cannot reroll or double-pay.
+
+8. Implement admin controls.
+   - Pause/unpause.
+   - Admin top-up.
+   - Admin withdraw with reserved-payout and safety-buffer checks.
+   - Acceptance: admin cannot withdraw funds needed for pending heists.
+
+## Phase 8: Onchain Heist API Integration
+
+1. Add onchain config.
+   - Define `BANKROLL_PROGRAM_ID`.
+   - Define Devnet RPC URL.
+   - Derive tier vault PDAs from `@bankroll/solana`.
+   - Acceptance: API refuses onchain heist preparation without explicit program id.
+
+2. Prepare `enter_heist` transaction.
+   - Backend validates heist intent.
+   - Backend derives the heist PDA and tier vault PDA.
+   - Backend returns an unsigned transaction for the user's wallet.
+   - Acceptance: frontend wallet can sign and submit `enter_heist`.
+
+3. Index onchain heist state.
+   - Store heist PDA, entry signature, tier vault PDA, tier, cost, crew, target, and status.
+   - Acceptance: duplicate index attempts are idempotent.
+
+4. Wire frontend to onchain entry flow.
+   - Create intent.
+   - Sign `enter_heist`.
+   - Poll indexed status.
+   - Show pending settlement.
+   - Acceptance: one Devnet heist can enter onchain from the UI.
+
+5. Wire settlement trigger.
+   - Backend may trigger settlement, but program enforces payout rules.
+   - Acceptance: backend cannot choose arbitrary payout or move vault funds outside program rules.
+
+## Deprecated Prototype: Direct Solana Payment Flow
+
+This section describes the older trusted-backend prototype and should not be extended for serious v1 custody. Replace it with Phase 7 and Phase 8 work.
 
 1. Add payment config.
    - Define treasury/vault recipient SOL addresses per cluster and tier.
@@ -256,7 +360,9 @@ Stop and report instead of improvising if:
    - Mark heist as `paid` only after verification.
    - Acceptance: fake signatures, wrong amount, and wrong recipient fail.
 
-## Phase 8: Trusted Backend Settlement
+## Deprecated Prototype: Trusted Backend Settlement
+
+This section describes the older backend hot-wallet payout prototype and should not be extended for serious v1 custody. Program-owned vault settlement supersedes it.
 
 1. Implement settlement state machine.
    - Allowed states: `created`, `payment_pending`, `paid`, `settling`, `settled`, `failed`, `refunded`.
@@ -415,23 +521,27 @@ Stop and report instead of improvising if:
 1. Configure devnet environment.
    - RPC URL.
    - Program ID.
-   - Tier vault SOL addresses.
-   - Resolver authority.
+   - Derived tier vault PDAs.
+   - Admin authority.
+   - Resolver/RNG authority.
    - API URL.
    - Web URL.
    - Acceptance: `.env.example` files document all required values.
 
-2. Configure treasury and vault SOL addresses.
-   - Create/fund devnet recipient wallets.
-   - Configure payout authority locally.
-   - Acceptance: API can verify incoming payment signatures and send test payouts.
+2. Deploy and initialize Devnet program.
+   - Deploy Bankroll Mafia program to Devnet.
+   - Initialize config PDA.
+   - Initialize all four tier vault PDAs.
+   - Fund tier vaults with Devnet SOL for testing.
+   - Acceptance: all four vault PDAs are queryable on Devnet.
 
 3. Run devnet smoke test.
    - Connect wallet.
    - Authenticate.
-   - Sign payment transfer.
+   - Sign `enter_heist`.
+   - Confirm heist account exists.
    - Settle heist.
-   - Confirm payout.
+   - Confirm payout came from the correct tier vault PDA.
    - Acceptance: one full devnet heist completes from frontend.
 
 ## Not In V1
@@ -444,17 +554,15 @@ Stop and report instead of improvising if:
 - Referral rewards.
 - Free daily claims.
 - Mainnet real-money launch.
-- Trustless/provably fair RNG.
-- Custom Anchor program.
+- Mainnet RNG provider.
 - Redis.
 - Public admin dashboard.
 
 ## Open Decisions Before Mainnet
 
 - Legal/compliance review.
-- Final production settlement asset.
 - Final production RNG model.
 - Final daily vault cap numbers.
 - Final RTP values inside tier bands.
-- Whether/when to migrate settlement and vault accounting into an Anchor program.
-- Operational policy for treasury/payout key custody.
+- Whether Devnet ships with VRF/oracle randomness or commit-reveal with refund timeout.
+- Operational policy for admin and resolver authority custody.

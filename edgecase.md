@@ -131,8 +131,8 @@ This file tracks edge cases discovered while implementing features from `PLAN.md
 - A matching old SOL transfer must not be usable as payment for a new heist; payment verification checks transaction timing against intent creation.
 - Payment transactions missing an RPC `blockTime` cannot prove they happened after the intent and must be rejected when timing checks are required.
 - Payment signatures must be globally unique. Reusing a payment signature across heists is a direct double-spend accounting bug.
-- Missing `PAYOUT_AUTHORITY_KEYPAIR_PATH` should block settlement, not payment verification.
-- This v1 payout path is trusted backend custody. Payout key compromise can drain treasury funds, so production needs key isolation and withdrawal limits.
+- In the deprecated trusted-backend prototype, missing `PAYOUT_AUTHORITY_KEYPAIR_PATH` should block settlement, not payment verification.
+- In the deprecated trusted-backend prototype, payout key compromise can drain treasury funds. This is why the serious Devnet custody target moved to program-owned vault PDAs.
 
 ## Phase 13: Validation And Abuse Tests
 
@@ -158,3 +158,20 @@ This file tracks edge cases discovered while implementing features from `PLAN.md
 - GitHub Actions only blocks merges if branch protection requires the commit message check.
 - Squash merge commit titles must follow the same convention if the repository uses squash merging.
 - Product-specific commit types such as `security`, `economy`, and `contract` prevent important game-risk changes from being hidden under generic `chore` commits.
+
+## Phase 16: Onchain Vault Program Pivot
+
+- One Solana program with four tier vault PDAs is the custody target for Devnet. Four normal wallets are faster but leave vault custody in hot-key/backend territory.
+- PDA vaults reduce private-key drain risk, but they do not solve RNG fairness by themselves.
+- The native Windows Solana toolchain is installed and direct `cargo build-sbf` succeeds for the initial program scaffold.
+- `anchor build` is still unreliable on native Windows in this workspace: the AVM launcher fails to find `rustup`, while the direct Anchor 1.0.2 binary panics inside `cargo-build-sbf`. Use the direct SBF build path until this is fixed or moved to WSL/Linux CI.
+- Vault PDA addresses must be derived from `BANKROLL_PROGRAM_ID` and tier seeds. Hand-entered vault wallet addresses are deprecated prototype config.
+- Tier vault PDA seeds use fixed tier bytes, not display names. The app/API tier names must map `street`, `crew`, `boss`, and `highroller` to `0`, `1`, `2`, and `3` before deriving vault PDAs.
+- Heist PDA seeds encode idempotency keys as 16 UUID bytes because raw UUID strings are noisier seed material and seed formats should stay fixed before deployment.
+- Admin withdrawals need reserved-payout and safety-buffer checks. Otherwise manual ops can make already-entered heists insolvent.
+- Commit-reveal RNG without a timeout/refund path lets a resolver grief players by refusing to reveal bad outcomes.
+- Backend code that still signs payouts is prototype-only after this pivot and must not be described as the serious v1 custody model.
+- The first onchain scaffold records heist entry and custody, but it does not yet implement outcome reveal, payout settlement, admin withdrawals, vault caps, or reserve accounting.
+- Config initialization must be gated by the deployed program's upgrade authority. Otherwise a random wallet can front-run the first config init and become admin.
+- Tier vault initialization must be admin-gated through the config PDA. Otherwise a random wallet can initialize fixed vault PDA metadata first and grief deployment.
+- Tier cost bounds and valid crew ID ranges must be enforced onchain, not only by API validation. A client can bypass the API and call the program directly.

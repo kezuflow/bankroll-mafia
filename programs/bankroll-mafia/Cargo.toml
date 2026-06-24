@@ -1,0 +1,17 @@
+[package]
+name = "bankroll-mafia"
+version = "0.1.0"
+description = "Bankroll Mafia Solana program"
+edition = "2021"
+
+[lib]
+crate-type = ["cdylib", "lib"]
+name = "bankroll_mafia"
+
+[features]
+no-entrypoint = []
+cpi = ["no-entrypoint"]
+idl-build = ["anchor-lang/idl-build"]
+
+[dependencies]
+anchor-lang = "1.0.2"

@@ -12,23 +12,26 @@ Core principle:
 
 The game should not rely on energy, cooldowns, dirty cash, PvP, or hidden punishment odds for v1. If a player or bot repeats heists forever, the expected result should be house-edge capture.
 
-V1 is Solana-first:
+V1 target architecture is Solana Devnet first:
 
 - Heists are paid onchain with native SOL.
 - There is no predeposit ledger.
-- The player signs each heist payment as a direct native SOL transfer.
-- V1 uses trusted backend payment verification, RNG, vault accounting, and payout settlement.
-- A custom Solana/Anchor program is deferred until the game loop proves it is worth the added complexity.
+- The player signs each heist entry transaction.
+- One Solana program owns four tier vault PDAs.
+- The program controls vault deposits and payouts.
+- The backend indexes, authenticates, and assists with transactions, but should not custody vault funds.
+- Randomness remains a separate unresolved security boundary for Devnet.
 
 ## Core Loop
 
 1. Player chooses a heist tier.
 2. Player chooses a target.
 3. Player chooses a crew.
-4. Player pays the heist cost.
-5. Trusted backend RNG resolves one of five outcomes.
-6. Player receives the outcome payout.
-7. Same-tier vault and treasury allocations update.
+4. Player signs `enter_heist`.
+5. Program transfers SOL into the tier vault PDA and creates the heist account.
+6. Randomness resolves one of five outcomes.
+7. Program pays the player from the same tier vault PDA.
+8. Backend indexes the result for UI/history.
 
 The frontend should feel like a mafia heist decision. The backend should treat the action like a wager with capped liability.
 
@@ -282,20 +285,18 @@ Never use weak randomness:
 - `msg.sender`
 - predictable values
 
-V1 uses:
+Devnet settlement must use one of:
 
-- trusted backend RNG
-- backend-verified payment signatures
-- backend-signed payout transfers
+- Solana-compatible VRF/oracle randomness
+- commit-reveal with timeout/refund rules
 
-Later production options:
+Do not ship real-value mainnet play with:
 
-- verifiable RNG
-- commit-reveal
-- oracle-based randomness
-- delayed reveal
+- raw trusted backend RNG
+- slot/timestamp/blockhash RNG
+- backend hot-wallet payout authority as the only vault control
 
-Once a heist payment is verified, the user must not be able to cancel bad outcomes. For V1, the database and backend settlement state machine must enforce one settlement per verified payment. A later Solana program can move this enforcement onchain.
+Once a heist enters the program, the user must not be able to cancel bad outcomes and the resolver must not be able to reroll outcomes. The program must enforce one settlement per heist.
 
 ## Later Implementation
 

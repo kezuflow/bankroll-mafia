@@ -2,11 +2,11 @@
 
 ## Summary
 
-Bankroll Mafia is a Solana web3 mafia/heist game with a casino-style risk economy. The frontend presents a seamless bank-heist fantasy, while the backend coordinates game intent, payment transaction construction, payment verification, trusted RNG settlement, and payout records. V1 uses direct native SOL transfers and a trusted backend treasury model.
+Bankroll Mafia is a Solana web3 mafia/heist game with a casino-style risk economy. The frontend presents a seamless bank-heist fantasy, while an onchain Solana program owns tier vaults, records paid heists, enforces payout movement, and keeps the backend out of direct custody.
 
 Core architecture rule:
 
-> Frontend previews. Backend coordinates. Wallet signs. Backend verifies payment. Backend settles.
+> Frontend previews. Wallet signs. Program escrows and pays. Backend indexes and assists.
 
 ## Tech Stack
 
@@ -38,18 +38,30 @@ Tailwind and shadcn/ui should be used for the main product interface. The game s
 
 Drizzle is preferred over Prisma for v1 because the backend still needs SQL-like control over indexing, admin records, idempotency, audit logs, and offchain mirrors of onchain events.
 
-### Solana Payments
+### Solana Program
 
 - Solana Devnet for v1 development
 - Native SOL as the settlement asset
-- Direct native SOL payment transfers from player wallets
-- Tier treasury/vault SOL addresses
-- Backend-signed payout transfers
-- Trusted backend RNG for prototype/v1
+- One Bankroll Mafia Solana program
+- Four program-derived tier vault accounts
+- One heist state account per wager
+- Program-controlled SOL entry and payout movement
+- Backend/indexer for UI, auth, read models, and transaction assistance
+- Devnet first; no mainnet launch until program, RNG, and operations are audited
 
-### Later Onchain Program
+Vault structure:
 
-Anchor is not required for the webapp/API v1. Use it later only if the project decides to move heist state, vault accounting, settlement caps, or payout enforcement into a custom Solana program.
+```txt
+BankrollMafiaProgram
+  config PDA
+  street vault PDA
+  crew vault PDA
+  boss vault PDA
+  highroller vault PDA
+  heist PDA per wager
+```
+
+Do not use backend-controlled payout wallets for the serious v1 custody model. Plain wallets may still be useful for early local smoke tests, but production architecture should use program-owned PDAs.
 
 Do not use RainbowKit, wagmi, or viem for the Solana implementation. Those are EVM-oriented tools.
 
@@ -63,6 +75,7 @@ Planned packages:
 - `@bankroll/economy`
 - `@bankroll/db`
 - `@bankroll/shared-types`
+- `@bankroll/solana`
 - `@bankroll/ui`
 
 Responsibilities:
@@ -71,6 +84,7 @@ Responsibilities:
 - `@bankroll/economy`: RTP, EV, payout, vault cap, and crew modifier calculations.
 - `@bankroll/db`: Drizzle schema, migrations, database client, and indexer/admin repository helpers.
 - `@bankroll/shared-types`: API DTOs, shared enums, and cross-app TypeScript types.
+- `@bankroll/solana`: shared Solana constants and PDA derivation helpers.
 - `@bankroll/ui`: reusable design-system components.
 
 ## Wallet Connection And Auth
@@ -127,23 +141,23 @@ The backend recomputes:
 - treasury allocation
 - final settlement records
 
-For onchain heists, the backend cannot spend user funds. It prepares transaction instructions and the user's wallet signs them.
+For onchain heists, the backend cannot spend user funds and should not control vault payouts. It may prepare transaction instructions, but the user's wallet signs entry transactions and the program signs vault payouts through PDA authority.
 
 Heist entry flow:
 
 ```txt
 1. User selects tier, target, crew, and heist cost.
-2. Frontend requests a prepared heist payment from the API.
-3. Backend validates intent and returns an unsigned native SOL transfer.
-4. User signs and submits the transfer with their wallet.
-5. Backend verifies the submitted transaction signature against RPC.
-6. Backend records the heist as paid.
-7. Backend resolves RNG and calculates payout.
-8. Backend signs payout from the configured treasury/vault authority.
-9. Backend stores the settlement and payout signature.
+2. Frontend or API builds an enter_heist transaction.
+3. User signs and submits enter_heist with their wallet.
+4. Program transfers SOL from the player to the correct tier vault PDA.
+5. Program creates the heist state account.
+6. Backend indexes the confirmed heist account and signature for UI/history.
+7. Randomness/settlement resolves through the selected devnet RNG path.
+8. Program pays the player from the same tier vault PDA.
+9. Backend indexes the settlement and payout signature.
 ```
 
-This is no predeposit, but it is a trusted backend treasury model. Do not describe v1 as trustless or non-custodial.
+This is no predeposit and no backend hot-wallet payout path. Do not describe the game as fully trustless until the RNG and admin controls are also verifiable and audited.
 
 ## Backend Modules
 
@@ -168,17 +182,17 @@ Module responsibilities:
 - `auth`: Solana login nonce creation, message signature verification, session cookies, logout.
 - `wallets`: wallet ownership, linked wallet records, chain metadata.
 - `users`: user profiles, progression, access flags.
-- `heists`: heist creation, pending state, settlement orchestration.
+- `heists`: heist transaction assistance, indexed status, and pending state read models.
 - `vaults`: tier vault balances, caps, contributions, payout limits.
 - `economy`: server-side RTP and payout calculations.
 - `ledger`: indexed mirror of onchain value movement and admin/audit records.
-- `rng`: trusted backend RNG resolver for prototype/v1.
+- `rng`: selected devnet randomness or commit-reveal resolver, with explicit trust limitations.
 - `treasury`: protocol revenue, reserves, burns, and cross-tier seed allocation.
 - `admin`: internal tools for balancing, monitoring, and manual review.
 
 ## Database Model
 
-Use Solana token transfers as the source of truth for value movement. Use PostgreSQL as the source of truth for offchain sessions, heist state, audit logs, payment verification, settlement records, idempotency, and derived views.
+Use Solana program accounts and transactions as the source of truth for value movement and wager state. Use PostgreSQL as the source of truth for offchain sessions, indexed mirrors, audit logs, idempotency helpers, and derived views.
 
 Store money in integer base units:
 
@@ -201,20 +215,18 @@ REFUND
 ADMIN_ADJUSTMENT
 ```
 
-V1 settlement orchestration should be idempotent:
+Onchain settlement orchestration should be idempotent:
 
 ```txt
-1. Create heist intent.
-2. Prepare unsigned payment transfer.
-3. Verify submitted payment signature.
-3. Generate trusted backend RNG outcome.
-4. Calculate payout from shared economy config.
-5. Persist outcome before payout attempt.
-6. Submit payout transfer if payout is greater than zero.
-7. Store payout signature and settlement record.
+1. Derive heist PDA from wallet and idempotency key.
+2. enter_heist creates the heist account only once.
+3. settle_heist must fail if the heist is already settled.
+4. Program calculates or verifies payout from canonical config.
+5. Program transfers payout from the tier vault PDA.
+6. Backend indexes the final account state and settlement signature.
 ```
 
-The backend/database must enforce one settlement per paid heist so retries cannot double-pay. A later Solana program can move this invariant onchain.
+The program must enforce one settlement per paid heist so retries cannot double-pay.
 
 ## Data Fetching
 
@@ -244,15 +256,14 @@ Do not use Zustand as authoritative game state.
 Add only when needed:
 
 - Redis for high-volume rate limiting, queues, or short-lived ephemeral state.
-- Worker process for delayed settlement, RNG callbacks, indexing, and retries.
+- Worker process for delayed settlement triggers, RNG callbacks, indexing, and retries.
 - Chain indexer for contract events.
 - Admin dashboard for vaults, treasury, and balancing.
 - Observability with metrics, traces, alerts, and settlement anomaly dashboards.
-- Provably fair RNG or Solana-compatible VRF once the prototype economy is validated.
-- Anchor program for non-custodial vault accounting if the product justifies the added complexity.
+- Solana-compatible VRF once the prototype economy is validated, if commit-reveal is not sufficient.
 
 ## Open Questions
 
-- Should mainnet production keep trusted backend RNG or move to provably fair RNG / Solana-compatible VRF?
+- Which devnet RNG path should be used first: commit-reveal with refund timeout, Switchboard/MagicBlock style VRF, or another Solana-compatible provider?
 - What legal/compliance constraints apply before real-money or crypto wagering goes live?
 - Should sessions be stored only in signed cookies for v1, or backed by a database session table?
