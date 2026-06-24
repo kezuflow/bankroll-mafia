@@ -19,8 +19,9 @@ export const heistRoutes: FastifyPluginAsync = async (app) => {
   app.get("/status", async () => ({
     module: "heists",
     implemented: true,
-    transactionPreparation: "native_sol_payment",
-    settlement: "trusted_backend_sol_payout",
+    transactionPreparation: "program_enter_heist",
+    onchainEntry: "implemented_program_enter_heist",
+    settlement: "program_settle_heist",
   }));
 
   app.post("/intent", async (request, reply) => {
@@ -149,6 +150,9 @@ export const heistRoutes: FastifyPluginAsync = async (app) => {
         signature: parsed.data.signature,
         walletAddress: session.walletAddress,
         tier: record.tier,
+        targetId: record.targetId,
+        crewIds: record.crewIds,
+        idempotencyKey: record.idempotencyKey,
         heistCostBaseUnits: record.heistCostBaseUnits,
         notBefore: record.createdAt,
       });
@@ -168,7 +172,9 @@ export const heistRoutes: FastifyPluginAsync = async (app) => {
     } catch (error) {
       return reply.code(400).send({
         error:
-          error instanceof Error ? error.message : "Payment verification failed",
+          error instanceof Error
+            ? error.message
+            : "Payment verification failed",
       });
     }
   });

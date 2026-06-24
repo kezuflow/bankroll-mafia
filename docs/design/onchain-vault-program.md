@@ -129,11 +129,13 @@ Player-signed instruction that:
 Resolver-signed instruction that:
 
 1. Verifies the heist is unsettled.
-2. Verifies the randomness or commit-reveal result.
-3. Calculates the outcome and payout.
-4. Applies vault cap and reserved budget rules.
+2. Accepts the resolver-selected outcome and payout for the current Devnet scaffold.
+3. Enforces the tier payout multiplier cap.
+4. Verifies the tier vault has enough SOL above rent-exempt balance.
 5. Transfers payout from tier vault PDA to player.
 6. Marks the heist settled.
+
+The current Devnet scaffold does not yet verify VRF or commit-reveal proof inside the program. That remains a required security upgrade before real-value launch.
 
 ### admin_top_up
 

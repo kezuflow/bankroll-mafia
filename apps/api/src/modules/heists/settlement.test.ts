@@ -67,7 +67,7 @@ describe("heist settlement", () => {
       submit: 0,
     };
     const transport: SettlementTransport = {
-      async buildSignedPayout() {
+      async buildSignedSettlement() {
         calls.build += 1;
 
         return {
@@ -75,7 +75,7 @@ describe("heist settlement", () => {
           transactionBase64: "signed-transaction",
         };
       },
-      async submitSignedPayout() {
+      async submitSignedSettlement() {
         calls.submit += 1;
 
         return "settlement-signature";

@@ -48,8 +48,10 @@ export function PrepareHeistButton() {
       });
 
       if (!intent.transactionPreparation.available) {
-        toast.success("Heist intent saved", {
-          description: intent.transactionPreparation.reason,
+        toast.error("Heist entry is not wired yet", {
+          description:
+            intent.transactionPreparation.reason ??
+            "The onchain enter_heist flow still needs to replace the deprecated payment prototype.",
         });
         return;
       }
@@ -74,11 +76,13 @@ export function PrepareHeistButton() {
         } lamports`,
       });
     } catch (error) {
+      const message =
+        error instanceof Error
+          ? error.message
+          : "Connect wallet and sign in before preparing a heist.";
+
       toast.error("Could not prepare heist", {
-        description:
-          error instanceof Error
-            ? error.message
-            : "Connect wallet and sign in before preparing a heist.",
+        description: getActionableError(message),
       });
     } finally {
       setPending(false);
@@ -94,11 +98,19 @@ export function PrepareHeistButton() {
       disabled={pending || selectedCrewIds.length !== 4}
     >
       <Banknote className="h-5 w-5" aria-hidden="true" />
-      {pending ? "Preparing..." : "Prepare Payment"}
+      {pending ? "Preparing..." : "Prepare Heist"}
     </Button>
   );
 }
 
 function decodeBase64(value: string) {
   return Uint8Array.from(atob(value), (character) => character.charCodeAt(0));
+}
+
+function getActionableError(message: string) {
+  if (message === "Authentication required") {
+    return "Connect your wallet, then click Sign In before preparing a heist.";
+  }
+
+  return message;
 }

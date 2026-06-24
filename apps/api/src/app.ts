@@ -3,16 +3,7 @@ import cookie from "@fastify/cookie";
 import helmet from "@fastify/helmet";
 import Fastify from "fastify";
 
-import { adminRoutes } from "./modules/admin/index.js";
-import { authRoutes } from "./modules/auth/index.js";
-import { economyRoutes } from "./modules/economy/index.js";
-import { heistRoutes } from "./modules/heists/index.js";
-import { ledgerRoutes } from "./modules/ledger/index.js";
-import { rngRoutes } from "./modules/rng/index.js";
-import { treasuryRoutes } from "./modules/treasury/index.js";
-import { userRoutes } from "./modules/users/index.js";
-import { vaultRoutes } from "./modules/vaults/index.js";
-import { walletRoutes } from "./modules/wallets/index.js";
+import { apiModules } from "./modules/index.js";
 
 export function createApp() {
   const app = Fastify({
@@ -36,16 +27,9 @@ export function createApp() {
     environment: process.env.NODE_ENV ?? "development",
   }));
 
-  void app.register(authRoutes, { prefix: "/auth" });
-  void app.register(walletRoutes, { prefix: "/wallets" });
-  void app.register(userRoutes, { prefix: "/users" });
-  void app.register(heistRoutes, { prefix: "/heists" });
-  void app.register(vaultRoutes, { prefix: "/vaults" });
-  void app.register(economyRoutes, { prefix: "/economy" });
-  void app.register(ledgerRoutes, { prefix: "/ledger" });
-  void app.register(rngRoutes, { prefix: "/rng" });
-  void app.register(treasuryRoutes, { prefix: "/treasury" });
-  void app.register(adminRoutes, { prefix: "/admin" });
+  for (const module of apiModules) {
+    void app.register(module.routes, { prefix: module.prefix });
+  }
 
   return app;
 }

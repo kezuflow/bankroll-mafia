@@ -1,3 +1,5 @@
+import "dotenv/config";
+
 import { createApp } from "./app.js";
 
 const app = createApp();
@@ -24,4 +26,3 @@ process.on("SIGINT", () => {
 process.on("SIGTERM", () => {
   void shutdown("SIGTERM");
 });
-

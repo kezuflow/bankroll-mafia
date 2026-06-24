@@ -2,9 +2,11 @@ import { Keypair, PublicKey } from "@solana/web3.js";
 import { describe, expect, it } from "vitest";
 
 import {
+  buildEnterHeistTransaction,
   deriveHeistPda,
   deriveProgramConfigPda,
   deriveTierVaultPda,
+  enterHeistDiscriminator,
   tierSeedBytes,
 } from "./index.js";
 
@@ -53,5 +55,29 @@ describe("pda derivation", () => {
     const config = deriveProgramConfigPda(programId);
 
     expect(config.address.toBase58()).not.toBe(programId.toBase58());
+  });
+
+  it("builds an Anchor enter_heist transaction", () => {
+    const programId = Keypair.generate().publicKey;
+    const player = Keypair.generate().publicKey;
+    const transaction = buildEnterHeistTransaction({
+      programId,
+      player,
+      tier: "street",
+      idempotencyKey: "11111111-1111-4111-8111-111111111111",
+      targetIdSeed: new Uint8Array(32).fill(7),
+      crewIds: Uint8Array.from([0, 1, 5, 6]),
+      heistCostLamports: 1_000_000n,
+      blockhash: Keypair.generate().publicKey.toBase58(),
+    });
+
+    expect(transaction.instructions).toHaveLength(1);
+    expect(transaction.instructions[0]!.programId.toBase58()).toBe(
+      programId.toBase58(),
+    );
+    expect(transaction.instructions[0]!.data.slice(0, 8)).toEqual(
+      Buffer.from(enterHeistDiscriminator),
+    );
+    expect(transaction.feePayer?.toBase58()).toBe(player.toBase58());
   });
 });

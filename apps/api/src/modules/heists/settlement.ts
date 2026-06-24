@@ -1,19 +1,17 @@
 import { readFile } from "node:fs/promises";
 
-import {
-  SOL,
-  tierConfigs,
-  type TierConfig,
-} from "@bankroll/game-config";
+import { SOL, tierConfigs, type TierConfig } from "@bankroll/game-config";
 import { calculateVaultPayout, multiplyBasisPoints } from "@bankroll/economy";
+import {
+  buildSettleHeistInstruction,
+  getRequiredProgramIdFromEnv,
+} from "@bankroll/solana";
 import type { OutcomeId } from "@bankroll/shared-types";
 import bs58 from "bs58";
 import {
   Connection,
   Keypair,
-  PublicKey,
   sendAndConfirmRawTransaction,
-  SystemProgram,
   Transaction,
 } from "@solana/web3.js";
 
@@ -23,24 +21,30 @@ import {
   markHeistSettled,
   markHeistSettlementSelected,
   markHeistSettlementSubmitted,
+  type HeistIntentRecord,
 } from "./store.js";
 
 const normalOutcomeMultipliersBasisPoints = {
   full_success: 12_000,
   partial_success: 6_000,
   soft_fail: 1_000,
-  arrested: 1_200,
+  arrested: 0,
 } satisfies Partial<Record<OutcomeId, number>>;
 
+const outcomeProgramIds = {
+  vault_jackpot: 0,
+  full_success: 1,
+  partial_success: 2,
+  soft_fail: 3,
+  arrested: 4,
+} satisfies Record<OutcomeId, number>;
+
 export interface SettlementTransport {
-  buildSignedPayout(input: {
-    recipientAddress: string;
-    payoutBaseUnits: bigint;
-  }): Promise<{
+  buildSignedSettlement(input: HeistIntentRecord): Promise<{
     signature: string;
     transactionBase64: string;
   }>;
-  submitSignedPayout(transactionBase64: string): Promise<string>;
+  submitSignedSettlement(transactionBase64: string): Promise<string>;
 }
 
 export async function settleHeistIntent({
@@ -94,11 +98,14 @@ export async function settleHeistIntent({
     throw new Error("Settlement transaction was not stored");
   }
 
-  const signature = await transport.submitSignedPayout(
+  const signature = await transport.submitSignedSettlement(
     submitted.settlementTransactionBase64,
   );
 
-  if (submitted.settlementSignature && signature !== submitted.settlementSignature) {
+  if (
+    submitted.settlementSignature &&
+    signature !== submitted.settlementSignature
+  ) {
     throw new Error("Submitted settlement signature changed during retry");
   }
 
@@ -147,17 +154,30 @@ export function calculateSettlementPayout({
 
 function createSolSettlementTransport(): SettlementTransport {
   return {
-    async buildSignedPayout(input) {
-      const { connection, payoutAuthority } = await getSettlementRuntime();
+    async buildSignedSettlement(input) {
+      if (!input.outcome) {
+        throw new Error("Settlement outcome was not selected");
+      }
+
+      if (input.payoutBaseUnits === undefined) {
+        throw new Error("Settlement payout was not selected");
+      }
+
+      const { connection, payoutAuthority, programId } =
+        await getSettlementRuntime();
       const { blockhash } = await connection.getLatestBlockhash("confirmed");
       const transaction = new Transaction({
         feePayer: payoutAuthority.publicKey,
         recentBlockhash: blockhash,
       }).add(
-        SystemProgram.transfer({
-          fromPubkey: payoutAuthority.publicKey,
-          toPubkey: new PublicKey(input.recipientAddress),
-          lamports: input.payoutBaseUnits,
+        buildSettleHeistInstruction({
+          programId,
+          player: input.walletAddress,
+          resolverAuthority: payoutAuthority.publicKey,
+          tier: input.tier,
+          idempotencyKey: input.idempotencyKey,
+          outcome: outcomeProgramIds[input.outcome],
+          payoutLamports: input.payoutBaseUnits,
         }),
       );
 
@@ -172,7 +192,7 @@ function createSolSettlementTransport(): SettlementTransport {
         transactionBase64: transaction.serialize().toString("base64"),
       };
     },
-    async submitSignedPayout(transactionBase64) {
+    async submitSignedSettlement(transactionBase64) {
       const { connection } = await getSettlementRuntime();
       const rawTransaction = Buffer.from(transactionBase64, "base64");
       const transaction = Transaction.from(rawTransaction);
@@ -235,10 +255,7 @@ async function buildAndStorePayoutTransaction(
     throw new Error("Settlement payout was not selected");
   }
 
-  const signed = await transport.buildSignedPayout({
-    recipientAddress: selected.walletAddress,
-    payoutBaseUnits: selected.payoutBaseUnits,
-  });
+  const signed = await transport.buildSignedSettlement(selected);
 
   return markHeistSettlementSubmitted({
     id: selected.id,
@@ -256,12 +273,15 @@ async function getSettlementRuntime() {
   }
 
   if (!keypairPath) {
-    throw new Error("PAYOUT_AUTHORITY_KEYPAIR_PATH is required to settle heists");
+    throw new Error(
+      "PAYOUT_AUTHORITY_KEYPAIR_PATH is required to settle heists",
+    );
   }
 
   return {
     connection: new Connection(rpcUrl, "confirmed"),
     payoutAuthority: await loadKeypairFromFile(keypairPath),
+    programId: getRequiredProgramIdFromEnv(process.env),
   };
 }
 
@@ -273,7 +293,9 @@ async function loadKeypairFromFile(path: string) {
     !Array.isArray(parsed) ||
     parsed.some((value) => !Number.isInteger(value) || value < 0 || value > 255)
   ) {
-    throw new Error("Payout authority keypair file must be a Solana byte array");
+    throw new Error(
+      "Payout authority keypair file must be a Solana byte array",
+    );
   }
 
   return Keypair.fromSecretKey(Uint8Array.from(parsed));

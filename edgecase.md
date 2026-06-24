@@ -66,14 +66,14 @@ This file tracks edge cases discovered while implementing features from `PLAN.md
 ## Phase 7: Solana Payment Flow
 
 - Anchor is no longer required for v1. Missing `anchor`, `solana`, `link.exe`, and `cl.exe` block only future custom-program work, not the webapp/API path.
-- Direct native SOL transfers make payment verification the critical safety boundary. The API must verify signer, source address, destination address, lamports, slot/confirmation status, and signature uniqueness.
-- A submitted transaction signature is not proof of payment by itself; failed, simulated, wrong-recipient, or wrong-amount transactions must not settle.
+- Program `enter_heist` transactions make heist account verification the critical safety boundary. The API must verify signer, program id, heist PDA, player, tier, target hash, crew ids, cost, slot/confirmation status, and signature uniqueness.
+- A submitted transaction signature is not proof of payment by itself; failed, simulated, wrong-program, wrong-account, or wrong-amount transactions must not settle.
 - Duplicate idempotency keys and duplicate payment signatures must not create multiple paid heists.
-- The frontend cannot be trusted to report a successful transfer. The backend must fetch and parse the transaction from RPC.
-- Prepared Solana transactions include a recent blockhash and can expire. A reused heist intent may eventually need a refresh-payment endpoint instead of returning stale transaction bytes.
+- The frontend cannot be trusted to report a successful heist entry. The backend must fetch the transaction and program-owned heist account from RPC.
+- Prepared Solana transactions include a recent blockhash and can expire. A reused heist intent may eventually need a refresh-entry endpoint instead of returning stale transaction bytes.
 - If the user has insufficient SOL for wager plus fees, wallet submission should fail before settlement.
 - RPC confirmation can lag wallet submission. The frontend may need retry/backoff for `/heists/:id/payment` instead of treating the first verification miss as final.
-- Devnet SOL is not production SOL. Environment config must make tier recipient addresses explicit per cluster.
+- Devnet SOL is not production SOL. Environment config must make program id and RPC URL explicit per cluster.
 - Treasury/vault recipient addresses are public config, but payout authority keypairs are secrets and must never be committed.
 
 ## Phase 9: Backend Auth
@@ -114,7 +114,8 @@ This file tracks edge cases discovered while implementing features from `PLAN.md
 ## Phase 10: Backend Heist API
 
 - BigInt values cannot be sent as raw JSON, so API responses stringify base-unit amounts.
-- The `/heists/intent` route now prepares native SOL payment transactions when `SOLANA_RPC_URL` and the tier vault address are configured.
+- The `/heists/intent` route now prepares program `enter_heist` transactions when `SOLANA_RPC_URL` and `BANKROLL_PROGRAM_ID` are configured.
+- Fastify/tsx does not automatically load `apps/api/.env`; the API server must load dotenv on startup or transaction preparation silently returns unavailable in local dev.
 - Idempotency reuse must return the original intent, not create a second wager attempt.
 - Idempotency must be scoped by authenticated wallet. A global idempotency map lets two wallets collide on the same UUID and see/reuse the wrong intent.
 - Heist intent validation must reject duplicate crews before any transaction is prepared, otherwise repeated crew perks become an exploit path.
@@ -126,13 +127,13 @@ This file tracks edge cases discovered while implementing features from `PLAN.md
 ## Phase 11: SOL Settlement
 
 - Settlement must persist the RNG-selected outcome before any payout is attempted. A retry must not reroll the same paid heist.
-- Payout transactions must be signed and stored before broadcast. If submission is retried, the backend should resubmit the same signed transaction instead of creating a second payout.
+- Program settlement transactions must be signed and stored before broadcast. If submission is retried, the backend should resubmit the same signed transaction instead of creating a second payout attempt.
 - Paid heists can be user-triggered for settlement in v1, but users must not control outcome, payout, payout address, or settlement signature.
-- A matching old SOL transfer must not be usable as payment for a new heist; payment verification checks transaction timing against intent creation.
-- Payment transactions missing an RPC `blockTime` cannot prove they happened after the intent and must be rejected when timing checks are required.
-- Payment signatures must be globally unique. Reusing a payment signature across heists is a direct double-spend accounting bug.
-- In the deprecated trusted-backend prototype, missing `PAYOUT_AUTHORITY_KEYPAIR_PATH` should block settlement, not payment verification.
-- In the deprecated trusted-backend prototype, payout key compromise can drain treasury funds. This is why the serious Devnet custody target moved to program-owned vault PDAs.
+- A matching old heist entry must not be usable as payment for a new heist; payment verification checks transaction timing and the exact heist PDA derived from the intent idempotency key.
+- Entry transactions missing an RPC `blockTime` cannot prove they happened after the intent and must be rejected when timing checks are required.
+- Entry and settlement signatures must be globally unique. Reusing a signature across heists is a direct accounting bug.
+- Missing `PAYOUT_AUTHORITY_KEYPAIR_PATH` blocks resolver-signed program settlement, not player entry verification.
+- Resolver key compromise can settle pending heists within program limits, but it cannot directly drain PDA vaults without valid heist accounts and program constraints.
 
 ## Phase 13: Validation And Abuse Tests
 
@@ -145,11 +146,11 @@ This file tracks edge cases discovered while implementing features from `PLAN.md
 
 ## Phase 14: Devnet Readiness
 
-- Devnet readiness now depends on configured SOL vault addresses and payout authority, not Anchor deployment.
-- Tier recipient addresses, RPC URL, API URL, and web URL must be explicit env values; guessing or hardcoding them risks signing against the wrong cluster.
+- Devnet readiness now depends on a deployed program id, initialized PDA vaults, configured RPC URL, and resolver authority.
+- Program id, RPC URL, API URL, and web URL must be explicit env values; guessing or hardcoding them risks signing against the wrong cluster.
 - Payout authority keypair paths should point to local secrets and must not be committed.
-- Frontend public env values can expose recipient addresses, but never treasury or payout secrets.
-- Trusted-backend v1 is operationally simpler than Anchor, but it increases backend custody/security responsibility.
+- Frontend public env values can expose RPC URL and program id, but never resolver, treasury, or payout secrets.
+- Resolver-signed settlement is operationally simpler than full trustless RNG, but it remains a fairness/security boundary until VRF or commit-reveal ships.
 
 ## Phase 15: Commit Policy
 
@@ -171,7 +172,8 @@ This file tracks edge cases discovered while implementing features from `PLAN.md
 - Admin withdrawals need reserved-payout and safety-buffer checks. Otherwise manual ops can make already-entered heists insolvent.
 - Commit-reveal RNG without a timeout/refund path lets a resolver grief players by refusing to reveal bad outcomes.
 - Backend code that still signs payouts is prototype-only after this pivot and must not be described as the serious v1 custody model.
-- The first onchain scaffold records heist entry and custody, but it does not yet implement outcome reveal, payout settlement, admin withdrawals, vault caps, or reserve accounting.
+- The onchain scaffold records heist entry, custody, and resolver-signed payout settlement, but it does not yet implement outcome reveal, admin withdrawals, daily caps, or reserve accounting.
 - Config initialization must be gated by the deployed program's upgrade authority. Otherwise a random wallet can front-run the first config init and become admin.
 - Tier vault initialization must be admin-gated through the config PDA. Otherwise a random wallet can initialize fixed vault PDA metadata first and grief deployment.
 - Tier cost bounds and valid crew ID ranges must be enforced onchain, not only by API validation. A client can bypass the API and call the program directly.
+- Program payout caps must match tier economy caps. An accidental 1x payout cap breaks full-success and jackpot math even when the backend calculation is correct.
