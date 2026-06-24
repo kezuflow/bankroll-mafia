@@ -9,7 +9,18 @@ import {
   tierSeedBytes,
 } from "@bankroll/solana";
 import { CREW_IDS, type CrewId, type HeistTier } from "@bankroll/shared-types";
-import { Connection, PublicKey } from "@solana/web3.js";
+import {
+  Connection,
+  type ParsedTransactionWithMeta,
+  PublicKey,
+} from "@solana/web3.js";
+
+import {
+  calculateMaxHeistPayout,
+  formatSolAmount,
+  getTierConfig,
+  getTierVaultLiquidity,
+} from "./liquidity.js";
 
 export interface PreparedHeistPayment {
   available: true;
@@ -57,6 +68,29 @@ export async function prepareHeistPaymentTransaction({
 
   const connection = new Connection(config.value.rpcUrl, "confirmed");
   const player = new PublicKey(walletAddress);
+  const liquidity = await getTierVaultLiquidity({
+    connection,
+    programId: config.value.programId,
+    tier,
+  });
+  const projectedVaultAvailableBaseUnits =
+    liquidity.availableBaseUnits + heistCostBaseUnits;
+  const tierConfig = getTierConfig(tier);
+  const maxPayoutBaseUnits = calculateMaxHeistPayout({
+    heistCostBaseUnits,
+    tierConfig,
+    projectedVaultAvailableBaseUnits,
+  });
+
+  if (projectedVaultAvailableBaseUnits < maxPayoutBaseUnits) {
+    return {
+      available: false,
+      reason: `${tierConfig.label} vault needs ${formatSolAmount(
+        maxPayoutBaseUnits - projectedVaultAvailableBaseUnits,
+      )} more available SOL before this heist can be paid safely.`,
+    };
+  }
+
   const { blockhash, lastValidBlockHeight } =
     await connection.getLatestBlockhash("confirmed");
   const transaction = buildEnterHeistTransaction({
@@ -116,10 +150,10 @@ export async function verifyHeistPaymentSignature({
   }
 
   const connection = new Connection(config.value.rpcUrl, "confirmed");
-  const transaction = await connection.getParsedTransaction(signature, {
-    commitment: "confirmed",
-    maxSupportedTransactionVersion: 0,
-  });
+  const transaction = await getConfirmedParsedTransactionWithRetry(
+    connection,
+    signature,
+  );
 
   if (!transaction) {
     throw new Error("Payment transaction was not found or is not confirmed");
@@ -228,6 +262,36 @@ function getProgramPaymentConfig(tier: HeistTier) {
           : "BANKROLL_PROGRAM_ID is required",
     };
   }
+}
+
+async function getConfirmedParsedTransactionWithRetry(
+  connection: Connection,
+  signature: string,
+): Promise<ParsedTransactionWithMeta> {
+  const maxAttempts = 8;
+
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    const transaction = await connection.getParsedTransaction(signature, {
+      commitment: "confirmed",
+      maxSupportedTransactionVersion: 0,
+    });
+
+    if (transaction) {
+      return transaction;
+    }
+
+    if (attempt < maxAttempts) {
+      await delay(500);
+    }
+  }
+
+  throw new Error("Payment transaction was not found or is not confirmed");
+}
+
+function delay(milliseconds: number) {
+  return new Promise((resolve) => {
+    setTimeout(resolve, milliseconds);
+  });
 }
 
 function encodeCrewIds(crewIds: CrewId[]) {

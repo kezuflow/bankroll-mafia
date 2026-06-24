@@ -1,6 +1,6 @@
 import { readFile } from "node:fs/promises";
 
-import { SOL, tierConfigs, type TierConfig } from "@bankroll/game-config";
+import type { TierConfig } from "@bankroll/game-config";
 import { calculateVaultPayout, multiplyBasisPoints } from "@bankroll/economy";
 import {
   buildSettleHeistInstruction,
@@ -23,6 +23,11 @@ import {
   markHeistSettlementSubmitted,
   type HeistIntentRecord,
 } from "./store.js";
+import {
+  formatSolAmount,
+  getTierConfig,
+  getTierVaultLiquidity,
+} from "./liquidity.js";
 
 const normalOutcomeMultipliersBasisPoints = {
   full_success: 12_000,
@@ -50,9 +55,11 @@ export interface SettlementTransport {
 export async function settleHeistIntent({
   heistId,
   transport = createSolSettlementTransport(),
+  vaultAvailableBaseUnits,
 }: {
   heistId: string;
   transport?: SettlementTransport;
+  vaultAvailableBaseUnits?: bigint;
 }) {
   const existing = await getHeistIntent(heistId);
 
@@ -74,7 +81,7 @@ export async function settleHeistIntent({
 
   const selected =
     existing.status === "paid"
-      ? await selectSettlementOutcome(heistId)
+      ? await selectSettlementOutcome(heistId, vaultAvailableBaseUnits)
       : existing;
 
   if (selected.payoutBaseUnits === undefined) {
@@ -211,27 +218,39 @@ function createSolSettlementTransport(): SettlementTransport {
   };
 }
 
-async function selectSettlementOutcome(heistId: string) {
+async function selectSettlementOutcome(
+  heistId: string,
+  vaultAvailableBaseUnits?: bigint,
+) {
   const heist = await getHeistIntent(heistId);
 
   if (!heist) {
     throw new Error("Heist intent not found");
   }
 
-  const tierConfig = tierConfigs.find((tier) => tier.id === heist.tier);
-
-  if (!tierConfig) {
-    throw new Error("Tier config not found");
-  }
+  const tierConfig = getTierConfig(heist.tier);
+  const availableBaseUnits =
+    vaultAvailableBaseUnits ??
+    (await getOnchainTierVaultAvailableBaseUnits(heist.tier));
 
   const rng = generateTrustedOutcome();
   const payout = calculateSettlementPayout({
     outcome: rng.outcome,
     heistCostBaseUnits: heist.heistCostBaseUnits,
     tierConfig,
-    vaultPoolBaseUnits: getConfiguredVaultPoolFallback(heist.tier),
+    vaultPoolBaseUnits: availableBaseUnits,
     remainingDailyVaultCapBaseUnits: tierConfig.absoluteDailyVaultCapBaseUnits,
   });
+
+  if (payout.payoutBaseUnits > availableBaseUnits) {
+    throw new Error(
+      `${tierConfig.label} vault only has ${formatSolAmount(
+        availableBaseUnits,
+      )} available, but this outcome needs ${formatSolAmount(
+        payout.payoutBaseUnits,
+      )}. Seed the vault before accepting more heists.`,
+    );
+  }
 
   return markHeistSettlementSelected({
     id: heist.id,
@@ -239,6 +258,19 @@ async function selectSettlementOutcome(heistId: string) {
     payoutBaseUnits: payout.payoutBaseUnits,
     vaultPayoutBaseUnits: payout.vaultPayoutBaseUnits,
   });
+}
+
+async function getOnchainTierVaultAvailableBaseUnits(
+  tier: HeistIntentRecord["tier"],
+) {
+  const { connection, programId } = await getSettlementRuntime();
+  const liquidity = await getTierVaultLiquidity({
+    connection,
+    programId,
+    tier,
+  });
+
+  return liquidity.availableBaseUnits;
 }
 
 async function buildAndStorePayoutTransaction(
@@ -299,19 +331,6 @@ async function loadKeypairFromFile(path: string) {
   }
 
   return Keypair.fromSecretKey(Uint8Array.from(parsed));
-}
-
-function getConfiguredVaultPoolFallback(tier: TierConfig["id"]) {
-  switch (tier) {
-    case "street":
-      return 100n * SOL;
-    case "crew":
-      return 500n * SOL;
-    case "boss":
-      return 2_500n * SOL;
-    case "highroller":
-      return 10_000n * SOL;
-  }
 }
 
 function bs58Signature(signature: Buffer | Uint8Array) {

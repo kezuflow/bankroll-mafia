@@ -85,10 +85,12 @@ describe("heist settlement", () => {
     const first = await settleHeistIntent({
       heistId: heist.id,
       transport,
+      vaultAvailableBaseUnits: 1_000n * SOL,
     });
     const second = await settleHeistIntent({
       heistId: heist.id,
       transport,
+      vaultAvailableBaseUnits: 1_000n * SOL,
     });
 
     expect(first.status).toBe("settled");
